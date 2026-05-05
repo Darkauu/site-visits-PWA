@@ -8,7 +8,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="SiteCheck">
 <title>SiteCheck — Inspección de Campo</title>
+<link rel="manifest" href="manifest.json">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root {
   --bg:#0f0f0f; --surface:#1a1a1a; --surface2:#242424; --surface3:#2e2e2e;
@@ -205,15 +207,62 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 /* TOAST */
 .toast{position:fixed;bottom:88px;left:50%;transform:translateX(-50%);background:var(--surface3);border:1px solid var(--border2);border-radius:20px;padding:8px 18px;font-family:var(--mono);font-size:12px;color:var(--text);opacity:0;transition:opacity .25s;z-index:300;white-space:nowrap;pointer-events:none}
 .toast.show{opacity:1}
+
+/* LOGIN */
+.login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;gap:0}
+.login-logo{font-family:var(--mono);font-size:28px;font-weight:700;color:var(--accent);letter-spacing:.12em;margin-bottom:6px}
+.login-sub{font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:40px;letter-spacing:.08em}
+.login-card{width:100%;max-width:360px;background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:24px}
+.login-title{font-size:17px;font-weight:600;margin-bottom:20px}
+.login-error{font-family:var(--mono);font-size:11px;color:var(--danger);margin-top:12px;display:none;text-align:center}
+.login-error.show{display:block}
+.login-footer{font-family:var(--mono);font-size:10px;color:var(--text3);text-align:center;margin-top:24px;letter-spacing:.06em}
+
+/* USER CHIP in topbar */
+.user-chip{font-family:var(--mono);font-size:10px;color:var(--text3);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:4px 10px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px}
+
+/* SYNC indicator */
+.sync-dot{width:7px;height:7px;border-radius:50%;background:var(--border2);flex-shrink:0;transition:background .3s}
+.sync-dot.syncing{background:var(--warn)}
+.sync-dot.synced{background:var(--success)}
 </style>
 </head>
 <body>
+
+<!-- ══ SCREEN: LOGIN ══ -->
+<div class="screen active" id="screen-login">
+  <div class="topbar">
+    <span class="topbar-logo">SITECHECK</span>
+  </div>
+  <div class="login-wrap">
+    <div class="login-logo">SITECHECK</div>
+    <div class="login-sub">// FIELD INSPECTION TOOL</div>
+    <div class="login-card">
+      <div class="login-title">Iniciar sesión</div>
+      <div class="field-group">
+        <label class="field-label">EMAIL</label>
+        <input class="field-input" id="login-email" type="email" placeholder="usuario@empresa.com" autocomplete="email">
+      </div>
+      <div class="field-group" style="margin-bottom:20px">
+        <label class="field-label">CONTRASEÑA</label>
+        <input class="field-input" id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      <button class="btn-primary" id="login-btn" onclick="doLogin()" style="justify-content:center">
+        Entrar →
+      </button>
+      <div class="login-error" id="login-error"></div>
+    </div>
+    <div class="login-footer">acceso solo por invitación</div>
+  </div>
+</div>
 
 <!-- ══ SCREEN: HOME ══ -->
 <div class="screen active" id="screen-home">
   <div class="topbar">
     <span class="topbar-logo">SITECHECK</span>
     <span style="flex:1"></span>
+    <div class="sync-dot" id="sync-dot" title="Estado de sincronización"></div>
+    <div class="user-chip" id="user-chip" onclick="confirmLogout()">...</div>
     <div class="btn-icon" onclick="showScreen('screen-settings');renderTemplates()">⚙</div>
   </div>
   <div class="home-hero">
@@ -457,16 +506,151 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 
 <script>
 /* ══════════════════════════════════════════
+   SUPABASE CONFIG
+   ⚠ Reemplaza con tus credenciales reales
+══════════════════════════════════════════ */
+const SUPA_URL = 'https://jprezhsqtdnybmxpnaav.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpwcmV6aHNxdGRueWJteHBuYWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMzNTIsImV4cCI6MjA5MzU0OTM1Mn0.8hcirTUfQhVp1QE78K3Famw_TAreP3xqzMmoK3d-MM8';
+const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+/* ══════════════════════════════════════════
    STATE & STORAGE
 ══════════════════════════════════════════ */
 const SK = 'sitecheck_v2';
 let S = { visits:[], templates:[] };
 let currentVisitId = null, currentPhotoCtx = null, currentPhotoView = null;
 let editingTemplateId = null, editingNodeId = null, pendingNodePhoto = null;
+let currentUser = null;
 
-function persist(){ localStorage.setItem(SK, JSON.stringify({visits:S.visits, templates:S.templates})); }
-function hydrate(){
+/* ── Local cache (offline safety) ── */
+function cacheLocal(){ localStorage.setItem(SK, JSON.stringify({visits:S.visits, templates:S.templates})); }
+function loadLocal(){
   try{ const r=localStorage.getItem(SK); if(r){ const d=JSON.parse(r); S.visits=d.visits||[]; S.templates=d.templates||[]; } } catch(e){}
+}
+
+/* ── Sync indicator ── */
+function setSyncing(){ const d=document.getElementById('sync-dot'); if(d){ d.className='sync-dot syncing'; } }
+function setSynced(){  const d=document.getElementById('sync-dot'); if(d){ d.className='sync-dot synced'; setTimeout(()=>d.className='sync-dot',3000); } }
+
+/* ── Remote persist: upsert visit row ── */
+async function persistVisit(visit){
+  if(!currentUser) return;
+  setSyncing();
+  try {
+    await sb.from('visits').upsert({
+      id:         visit.id,
+      user_id:    currentUser.id,
+      site_name:  visit.siteName,
+      client:     visit.client||null,
+      data:       visit,
+      updated_at: new Date().toISOString(),
+    });
+    setSynced();
+  } catch(e){ console.warn('sync error', e); }
+  cacheLocal();
+}
+
+/* ── Remote persist: upsert templates row ── */
+async function persistTemplates(){
+  if(!currentUser) return;
+  setSyncing();
+  try {
+    await sb.from('user_templates').upsert({
+      user_id:    currentUser.id,
+      data:       S.templates,
+      updated_at: new Date().toISOString(),
+    });
+    setSynced();
+  } catch(e){ console.warn('sync templates error', e); }
+  cacheLocal();
+}
+
+/* ── persist() — called everywhere in the app ── */
+function persist(visit){
+  // If a specific visit is passed, sync only that one; else sync templates
+  if(visit || currentVisitId){
+    const v = visit || getVisit();
+    if(v) persistVisit(v);
+  } else {
+    persistTemplates();
+  }
+  cacheLocal();
+}
+
+/* ── Load all data from Supabase for current user ── */
+async function hydrateFromRemote(){
+  if(!currentUser) return;
+  try {
+    // Visits
+    const { data: visitsRows } = await sb
+      .from('visits')
+      .select('data')
+      .eq('user_id', currentUser.id)
+      .order('updated_at', { ascending: false });
+    if(visitsRows) S.visits = visitsRows.map(r => r.data);
+
+    // Templates
+    const { data: tmplRows } = await sb
+      .from('user_templates')
+      .select('data')
+      .eq('user_id', currentUser.id)
+      .single();
+    if(tmplRows) S.templates = tmplRows.data;
+
+    cacheLocal();
+  } catch(e){ console.warn('hydrate error', e); }
+}
+
+/* ══════════════════════════════════════════
+   AUTH
+══════════════════════════════════════════ */
+async function doLogin(){
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl    = document.getElementById('login-error');
+  const btn      = document.getElementById('login-btn');
+  if(!email||!password){ showLoginError('Completa email y contraseña'); return; }
+  btn.textContent='Verificando...'; btn.disabled=true;
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  btn.textContent='Entrar →'; btn.disabled=false;
+  if(error){ showLoginError(error.message==='Invalid login credentials'?'Email o contraseña incorrectos':error.message); return; }
+  errEl.classList.remove('show');
+  await onLogin(data.user);
+}
+
+function showLoginError(msg){
+  const el=document.getElementById('login-error');
+  el.textContent=msg; el.classList.add('show');
+}
+
+async function onLogin(user){
+  currentUser = user;
+  const chip = document.getElementById('user-chip');
+  if(chip) chip.textContent = user.email.split('@')[0];
+  loadLocal(); // show cached data immediately
+  initDefaults();
+  renderHome();
+  renderTemplates();
+  showScreen('screen-home');
+  // Then fetch remote in background
+  await hydrateFromRemote();
+  initDefaults();
+  renderHome();
+  renderTemplates();
+}
+
+function confirmLogout(){
+  if(confirm('¿Cerrar sesión?')) doLogout();
+}
+
+async function doLogout(){
+  await sb.auth.signOut();
+  currentUser = null;
+  S = { visits:[], templates:[] };
+  localStorage.removeItem(SK);
+  showScreen('screen-login');
+  document.getElementById('login-email').value='';
+  document.getElementById('login-password').value='';
 }
 
 /* ══════════════════════════════════════════
@@ -577,7 +761,7 @@ function createVisit(){
   const sections=tmpl.sections.map(s=>({ name:s.name, questions:s.questions.map(q=>({text:q,answer:'',note:'',photos:[]})), open:true }));
   const v={ id:uid(), siteName:name, address:document.getElementById('new-site-addr').value.trim(), client:document.getElementById('new-site-client').value.trim(), templateName:tmpl.name, createdAt:Date.now(), sections, generalNotes:'', nodes:[] };
   S.visits.unshift(v);
-  persist();
+  persist(v);
   closeModal('modal-new-visit');
   openVisit(v.id);
 }
@@ -662,13 +846,13 @@ function renderQuestion(q,si,qi){
 }
 
 function toggleSection(si){
-  const v=getVisit(); v.sections[si].open=!v.sections[si].open; persist();
+  const v=getVisit(); v.sections[si].open=!v.sections[si].open; persist(v);
   document.getElementById(`sec-body-${si}`).classList.toggle('open');
   document.getElementById(`chev-${si}`).classList.toggle('open');
 }
 function setAnswer(si,qi,ans){
   const v=getVisit(); const q=v.sections[si].questions[qi];
-  q.answer=q.answer===ans?'':ans; persist();
+  q.answer=q.answer===ans?'':ans; persist(getVisit());
   const card=document.getElementById(`q-card-${si}-${qi}`);
   card.className=`question-card ${q.answer?'q-answered':''}`;
   const btns=card.querySelectorAll('.q-btn');
@@ -678,8 +862,8 @@ function setAnswer(si,qi,ans){
   na.classList.toggle('open',q.answer==='OBS'||!!q.note);
   updateSectionCount(si); updateProgress();
 }
-function saveNote(si,qi,val){ const v=getVisit(); v.sections[si].questions[qi].note=val; persist(); }
-function saveGeneralNotes(){ const v=getVisit(); if(!v) return; v.generalNotes=document.getElementById('general-notes').value; persist(); }
+function saveNote(si,qi,val){ const v=getVisit(); v.sections[si].questions[qi].note=val; persist(getVisit()); }
+function saveGeneralNotes(){ const v=getVisit(); if(!v) return; v.generalNotes=document.getElementById('general-notes').value; persist(v); }
 function updateSectionCount(si){
   const v=getVisit(); const sec=v.sections[si];
   const ans=sec.questions.filter(q=>q.answer).length;
@@ -696,7 +880,7 @@ function handlePhotoCapture(e){
   reader.onload=evt=>{
     const {si,qi}=currentPhotoCtx; const v=getVisit();
     if(!v.sections[si].questions[qi].photos) v.sections[si].questions[qi].photos=[];
-    v.sections[si].questions[qi].photos.push(evt.target.result); persist();
+    v.sections[si].questions[qi].photos.push(evt.target.result); persist(v);
     const strip=document.getElementById(`photos-${si}-${qi}`);
     if(strip){
       const photos=v.sections[si].questions[qi].photos;
@@ -717,7 +901,7 @@ function openPhotoViewer(si,qi,pi){
 function closePhotoViewer(){ document.getElementById('photo-viewer').classList.remove('open'); }
 function deleteCurrentPhoto(){
   const {si,qi,pi}=currentPhotoView; const v=getVisit();
-  v.sections[si].questions[qi].photos.splice(pi,1); persist();
+  v.sections[si].questions[qi].photos.splice(pi,1); persist(v);
   closePhotoViewer();
   const strip=document.getElementById(`photos-${si}-${qi}`);
   if(strip){
@@ -886,7 +1070,7 @@ function saveNode(){
   } else {
     v.nodes.push(node);
   }
-  persist(); closeModal('modal-add-node'); renderTopoTab();
+  persist(v); closeModal('modal-add-node'); renderTopoTab();
   toast(editingNodeId?'Equipo actualizado':'Equipo registrado en la topología');
 }
 
@@ -896,7 +1080,7 @@ function deleteNode(nodeId){
   const nd=v.nodes.find(n=>n.id===nodeId);
   v.nodes.forEach(n=>{ if(n.upstream===nodeId) n.upstream=nd?nd.upstream:null; });
   v.nodes=v.nodes.filter(n=>n.id!==nodeId);
-  persist(); closeModal('modal-node-detail'); renderTopoTab();
+  persist(v); closeModal('modal-node-detail'); renderTopoTab();
   toast('Equipo eliminado');
 }
 
@@ -1335,7 +1519,23 @@ function saveTemplate(){ persist(); toast('Plantilla guardada'); showScreen('scr
 /* ══════════════════════════════════════════
    INIT
 ══════════════════════════════════════════ */
-hydrate(); initDefaults(); renderHome(); renderTemplates();
+(async () => {
+  // Check for existing session
+  const { data: { session } } = await sb.auth.getSession();
+  if(session){
+    await onLogin(session.user);
+  } else {
+    showScreen('screen-login');
+  }
+  // Listen for auth changes (e.g. token refresh, logout from another tab)
+  sb.auth.onAuthStateChange((_event, session) => {
+    if(!session && currentUser){
+      currentUser = null;
+      S = { visits:[], templates:[] };
+      showScreen('screen-login');
+    }
+  });
+})();
 </script>
 </body>
 </html>
