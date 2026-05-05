@@ -538,8 +538,8 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
    SUPABASE CONFIG
    ⚠ Reemplaza con tus credenciales reales
 ══════════════════════════════════════════ */
-const SUPA_URL = 'SUPABASE_URL_AQUI';
-const SUPA_KEY = 'SUPABASE_ANON_KEY_AQUI';
+const SUPA_URL = 'https://jprezhsqtdnybmxpnaav.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpwcmV6aHNxdGRueWJteHBuYWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMzNTIsImV4cCI6MjA5MzU0OTM1Mn0.8hcirTUfQhVp1QE78K3Famw_TAreP3xqzMmoK3d-MM8';
 const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 /* ══════════════════════════════════════════
@@ -1570,40 +1570,42 @@ function saveTemplate(){ persist(); toast('Plantilla guardada'); showScreen('scr
    INIT
 ══════════════════════════════════════════ */
 (async () => {
-  // Read the hash BEFORE the SDK consumes it
-  const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
-  const tokenType  = hashParams.get('type'); // 'invite' | 'recovery' | null
+  // Read hash params BEFORE the SDK wipes them
+  const hashParams  = new URLSearchParams(window.location.hash.replace('#',''));
+  const accessToken = hashParams.get('access_token');
+  const refreshToken= hashParams.get('refresh_token');
+  const tokenType   = hashParams.get('type'); // 'invite' | 'recovery' | null | ''
 
-  // Clean URL immediately so refresh doesn't re-trigger
-  if(tokenType) history.replaceState(null, '', window.location.pathname);
-
-  if(tokenType === 'invite' || tokenType === 'signup'){
-    // Let the SDK exchange the token — it reads the hash internally
-    // We just wait for the session to be ready
-    const { data: { session }, error } = await sb.auth.getSession();
-    if(session){
-      showScreen('screen-set-password');
-    } else {
-      // Fallback: try setting session from hash tokens directly
-      const access  = hashParams.get('access_token');
-      const refresh = hashParams.get('refresh_token');
-      if(access && refresh){
-        await sb.auth.setSession({ access_token: access, refresh_token: refresh });
-        showScreen('screen-set-password');
-      } else {
-        showLoginError('Link de invitación inválido o expirado');
-        showScreen('screen-login');
-      }
-    }
-    return;
-  }
+  // Clean URL so refresh doesn't re-trigger
+  if(accessToken) history.replaceState(null, '', window.location.pathname);
 
   if(tokenType === 'recovery'){
+    if(accessToken && refreshToken)
+      await sb.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
     showScreen('screen-set-password');
     return;
   }
 
-  // Normal startup — check for existing session
+  if(accessToken && refreshToken){
+    // Establish session from the tokens in the hash
+    const { data, error } = await sb.auth.setSession({
+      access_token:  accessToken,
+      refresh_token: refreshToken,
+    });
+    if(!error && data.session){
+      const meta = data.session.user.user_metadata || {};
+      // If password_set flag is missing, this is a first-time invite
+      if(!meta.password_set){
+        showScreen('screen-set-password');
+        return;
+      }
+      // Already has a password — just log them in
+      await onLogin(data.session.user);
+      return;
+    }
+  }
+
+  // Normal startup — existing session check
   const { data: { session } } = await sb.auth.getSession();
   if(session){
     await onLogin(session.user);
@@ -1611,7 +1613,7 @@ function saveTemplate(){ persist(); toast('Plantilla guardada'); showScreen('scr
     showScreen('screen-login');
   }
 
-  // Auth state listener for token expiry / logout from other tab
+  // Auth state listener for logout / token expiry
   sb.auth.onAuthStateChange(async (event, session) => {
     if(event === 'PASSWORD_RECOVERY'){
       showScreen('screen-set-password');
