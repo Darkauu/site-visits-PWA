@@ -642,10 +642,14 @@ async function doSetPassword(){
   if(p1 !== p2){     err.textContent='Las contraseñas no coinciden'; err.classList.add('show'); return; }
   err.classList.remove('show');
   btn.textContent='Guardando...'; btn.disabled=true;
-  const { data, error } = await sb.auth.updateUser({ password: p1 });
+  // Update password + stamp metadata so we know password is set
+  const { error } = await sb.auth.updateUser({
+    password: p1,
+    data: { password_set: true }
+  });
   btn.textContent='Guardar y entrar →'; btn.disabled=false;
   if(error){ err.textContent=error.message; err.classList.add('show'); return; }
-  // Password set — proceed to app normally
+  history.replaceState(null, '', window.location.pathname);
   const { data: { session } } = await sb.auth.getSession();
   if(session) await onLogin(session.user);
 }
@@ -1566,40 +1570,45 @@ function saveTemplate(){ persist(); toast('Plantilla guardada'); showScreen('scr
    INIT
 ══════════════════════════════════════════ */
 (async () => {
-  // Supabase puts the token in the URL hash when the user clicks the invite link.
-  // exchangeCodeForSession picks it up and creates a session automatically.
-  // We intercept it here before doing anything else.
-  const hash = window.location.hash;
-  if(hash.includes('type=invite') || hash.includes('type=signup')){
-    const { data, error } = await sb.auth.exchangeCodeForSession(window.location.href);
-    if(!error && data.session){
-      // Clear the hash so a refresh doesn't re-trigger
-      history.replaceState(null, '', window.location.pathname);
-      showScreen('screen-set-password');
-      return;
-    }
-  }
-
-  // Normal startup — check for an existing valid session
-  const { data: { session } } = await sb.auth.getSession();
-  if(session){
-    await onLogin(session.user);
-  } else {
-    showScreen('screen-login');
-  }
-
-  // React to auth changes across tabs (logout, token expiry)
-  sb.auth.onAuthStateChange((event, session) => {
+  // onAuthStateChange fires BEFORE getSession when the user arrives
+  // via an invite link — the SDK parses the hash automatically.
+  // We set up the listener first so we never miss that event.
+  sb.auth.onAuthStateChange(async (event, session) => {
     if(event === 'PASSWORD_RECOVERY'){
       showScreen('screen-set-password');
       return;
     }
-    if(!session && currentUser){
+    // Invite link lands here as SIGNED_IN with a fresh session
+    // but the user hasn't set a password yet — route to set-password.
+    if(event === 'SIGNED_IN' && session){
+      const meta = session.user.user_metadata || {};
+      const isInvite = !meta.password_set && !meta.sub; // invited users have no password_set flag
+      // More reliable: check if email_confirmed_at === created_at (just confirmed via invite)
+      const justInvited = session.user.email_confirmed_at &&
+        Math.abs(new Date(session.user.email_confirmed_at) - new Date(session.user.created_at)) < 5000;
+      if(justInvited && !currentUser){
+        history.replaceState(null, '', window.location.pathname);
+        showScreen('screen-set-password');
+        return;
+      }
+      // Normal sign in
+      if(!currentUser) await onLogin(session.user);
+      return;
+    }
+    if(event === 'SIGNED_OUT'){
       currentUser = null;
       S = { visits:[], templates:[] };
       showScreen('screen-login');
     }
   });
+
+  // After listener is registered, check for existing session
+  const { data: { session } } = await sb.auth.getSession();
+  if(session && !currentUser){
+    await onLogin(session.user);
+  } else if(!session) {
+    showScreen('screen-login');
+  }
 })();
 </script>
 </body>
