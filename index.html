@@ -256,6 +256,35 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
   </div>
 </div>
 
+<!-- ══ SCREEN: SET PASSWORD (first login via invite) ══ -->
+<div class="screen" id="screen-set-password">
+  <div class="topbar">
+    <span class="topbar-logo">SITECHECK</span>
+  </div>
+  <div class="login-wrap">
+    <div class="login-logo">SITECHECK</div>
+    <div class="login-sub">// PRIMERA VEZ</div>
+    <div class="login-card">
+      <div class="login-title">Crear contraseña</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:20px;line-height:1.6">
+        Bienvenido. Establece una contraseña para acceder a la app en el futuro.
+      </div>
+      <div class="field-group">
+        <label class="field-label">NUEVA CONTRASEÑA</label>
+        <input class="field-input" id="set-password-1" type="password" placeholder="Mínimo 8 caracteres" autocomplete="new-password">
+      </div>
+      <div class="field-group" style="margin-bottom:20px">
+        <label class="field-label">CONFIRMAR CONTRASEÑA</label>
+        <input class="field-input" id="set-password-2" type="password" placeholder="Repite la contraseña" autocomplete="new-password" onkeydown="if(event.key==='Enter')doSetPassword()">
+      </div>
+      <button class="btn-primary" id="set-password-btn" onclick="doSetPassword()" style="justify-content:center">
+        Guardar y entrar →
+      </button>
+      <div class="login-error" id="set-password-error"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ══ SCREEN: HOME ══ -->
 <div class="screen active" id="screen-home">
   <div class="topbar">
@@ -509,8 +538,8 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
    SUPABASE CONFIG
    ⚠ Reemplaza con tus credenciales reales
 ══════════════════════════════════════════ */
-const SUPA_URL = 'https://jprezhsqtdnybmxpnaav.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpwcmV6aHNxdGRueWJteHBuYWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMzNTIsImV4cCI6MjA5MzU0OTM1Mn0.8hcirTUfQhVp1QE78K3Famw_TAreP3xqzMmoK3d-MM8';
+const SUPA_URL = 'SUPABASE_URL_AQUI';
+const SUPA_KEY = 'SUPABASE_ANON_KEY_AQUI';
 const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 /* ══════════════════════════════════════════
@@ -604,6 +633,23 @@ async function hydrateFromRemote(){
 /* ══════════════════════════════════════════
    AUTH
 ══════════════════════════════════════════ */
+async function doSetPassword(){
+  const p1  = document.getElementById('set-password-1').value;
+  const p2  = document.getElementById('set-password-2').value;
+  const btn = document.getElementById('set-password-btn');
+  const err = document.getElementById('set-password-error');
+  if(p1.length < 8){ err.textContent='Mínimo 8 caracteres'; err.classList.add('show'); return; }
+  if(p1 !== p2){     err.textContent='Las contraseñas no coinciden'; err.classList.add('show'); return; }
+  err.classList.remove('show');
+  btn.textContent='Guardando...'; btn.disabled=true;
+  const { data, error } = await sb.auth.updateUser({ password: p1 });
+  btn.textContent='Guardar y entrar →'; btn.disabled=false;
+  if(error){ err.textContent=error.message; err.classList.add('show'); return; }
+  // Password set — proceed to app normally
+  const { data: { session } } = await sb.auth.getSession();
+  if(session) await onLogin(session.user);
+}
+
 async function doLogin(){
   const email    = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
@@ -1520,15 +1566,34 @@ function saveTemplate(){ persist(); toast('Plantilla guardada'); showScreen('scr
    INIT
 ══════════════════════════════════════════ */
 (async () => {
-  // Check for existing session
+  // Supabase puts the token in the URL hash when the user clicks the invite link.
+  // exchangeCodeForSession picks it up and creates a session automatically.
+  // We intercept it here before doing anything else.
+  const hash = window.location.hash;
+  if(hash.includes('type=invite') || hash.includes('type=signup')){
+    const { data, error } = await sb.auth.exchangeCodeForSession(window.location.href);
+    if(!error && data.session){
+      // Clear the hash so a refresh doesn't re-trigger
+      history.replaceState(null, '', window.location.pathname);
+      showScreen('screen-set-password');
+      return;
+    }
+  }
+
+  // Normal startup — check for an existing valid session
   const { data: { session } } = await sb.auth.getSession();
   if(session){
     await onLogin(session.user);
   } else {
     showScreen('screen-login');
   }
-  // Listen for auth changes (e.g. token refresh, logout from another tab)
-  sb.auth.onAuthStateChange((_event, session) => {
+
+  // React to auth changes across tabs (logout, token expiry)
+  sb.auth.onAuthStateChange((event, session) => {
+    if(event === 'PASSWORD_RECOVERY'){
+      showScreen('screen-set-password');
+      return;
+    }
     if(!session && currentUser){
       currentUser = null;
       S = { visits:[], templates:[] };
