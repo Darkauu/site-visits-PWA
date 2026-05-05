@@ -1570,29 +1570,51 @@ function saveTemplate(){ persist(); toast('Plantilla guardada'); showScreen('scr
    INIT
 ══════════════════════════════════════════ */
 (async () => {
-  // onAuthStateChange fires BEFORE getSession when the user arrives
-  // via an invite link — the SDK parses the hash automatically.
-  // We set up the listener first so we never miss that event.
+  // Read the hash BEFORE the SDK consumes it
+  const hashParams = new URLSearchParams(window.location.hash.replace('#', ''));
+  const tokenType  = hashParams.get('type'); // 'invite' | 'recovery' | null
+
+  // Clean URL immediately so refresh doesn't re-trigger
+  if(tokenType) history.replaceState(null, '', window.location.pathname);
+
+  if(tokenType === 'invite' || tokenType === 'signup'){
+    // Let the SDK exchange the token — it reads the hash internally
+    // We just wait for the session to be ready
+    const { data: { session }, error } = await sb.auth.getSession();
+    if(session){
+      showScreen('screen-set-password');
+    } else {
+      // Fallback: try setting session from hash tokens directly
+      const access  = hashParams.get('access_token');
+      const refresh = hashParams.get('refresh_token');
+      if(access && refresh){
+        await sb.auth.setSession({ access_token: access, refresh_token: refresh });
+        showScreen('screen-set-password');
+      } else {
+        showLoginError('Link de invitación inválido o expirado');
+        showScreen('screen-login');
+      }
+    }
+    return;
+  }
+
+  if(tokenType === 'recovery'){
+    showScreen('screen-set-password');
+    return;
+  }
+
+  // Normal startup — check for existing session
+  const { data: { session } } = await sb.auth.getSession();
+  if(session){
+    await onLogin(session.user);
+  } else {
+    showScreen('screen-login');
+  }
+
+  // Auth state listener for token expiry / logout from other tab
   sb.auth.onAuthStateChange(async (event, session) => {
     if(event === 'PASSWORD_RECOVERY'){
       showScreen('screen-set-password');
-      return;
-    }
-    // Invite link lands here as SIGNED_IN with a fresh session
-    // but the user hasn't set a password yet — route to set-password.
-    if(event === 'SIGNED_IN' && session){
-      const meta = session.user.user_metadata || {};
-      const isInvite = !meta.password_set && !meta.sub; // invited users have no password_set flag
-      // More reliable: check if email_confirmed_at === created_at (just confirmed via invite)
-      const justInvited = session.user.email_confirmed_at &&
-        Math.abs(new Date(session.user.email_confirmed_at) - new Date(session.user.created_at)) < 5000;
-      if(justInvited && !currentUser){
-        history.replaceState(null, '', window.location.pathname);
-        showScreen('screen-set-password');
-        return;
-      }
-      // Normal sign in
-      if(!currentUser) await onLogin(session.user);
       return;
     }
     if(event === 'SIGNED_OUT'){
@@ -1601,14 +1623,6 @@ function saveTemplate(){ persist(); toast('Plantilla guardada'); showScreen('scr
       showScreen('screen-login');
     }
   });
-
-  // After listener is registered, check for existing session
-  const { data: { session } } = await sb.auth.getSession();
-  if(session && !currentUser){
-    await onLogin(session.user);
-  } else if(!session) {
-    showScreen('screen-login');
-  }
 })();
 </script>
 </body>
