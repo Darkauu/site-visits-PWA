@@ -371,8 +371,6 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
         <option value="access" selected>🟢 Switch de Acceso</option>
         <option value="router">🔷 Router / Firewall</option>
         <option value="ap">📡 Access Point</option>
-        <option value="server">🖥 Servidor / NAS</option>
-        <option value="ups">🔋 UPS</option>
         <option value="other">⬜ Otro</option>
       </select>
     </div>
@@ -1040,14 +1038,20 @@ function renderTopoSVG(nodes){
   // Build edges
   let edges='';
   nodes.forEach(n=>{
-    if(n.upstream && nodeMap[n.upstream]){
-      const p=nodeMap[n.upstream]; const c=nodeMap[n.id];
-      if(p._x!==undefined && c._x!==undefined){
-        const x1=p._x+NWIDTH/2+20, y1=p._y+NHEIGHT+20;
-        const x2=c._x+NWIDTH/2+20, y2=c._y+20;
-        edges+=`<path d="M${x1},${y1} C${x1},${(y1+y2)/2} ${x2},${(y1+y2)/2} ${x2},${y2}" stroke="#444" stroke-width="1.5" fill="none"/>`;
+    // Resolve all upstream IDs — APs can have multiple
+    const upIds=n.type==='ap'&&n.upstreams&&n.upstreams.length
+      ? n.upstreams
+      : (n.upstream ? [n.upstream] : []);
+    upIds.forEach(upId=>{
+      if(nodeMap[upId]){
+        const p=nodeMap[upId]; const c=nodeMap[n.id];
+        if(p._x!==undefined && c._x!==undefined){
+          const x1=p._x+NWIDTH/2+20, y1=p._y+NHEIGHT+20;
+          const x2=c._x+NWIDTH/2+20, y2=c._y+20;
+          edges+=`<path d="M${x1},${y1} C${x1},${(y1+y2)/2} ${x2},${(y1+y2)/2} ${x2},${y2}" stroke="#444" stroke-width="1.5" fill="none"/>`;
+        }
       }
-    }
+    });
   });
 
   // Build nodes
