@@ -254,7 +254,16 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 .splash-spinner{width:28px;height:28px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-/* SKELETON */
+/* CONTEXT MENU */
+.ctx-menu{position:fixed;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r2);box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:400;min-width:160px;overflow:hidden;opacity:0;transform:scale(.95);transition:opacity .12s,transform .12s;pointer-events:none}
+.ctx-menu.open{opacity:1;transform:scale(1);pointer-events:auto}
+.ctx-item{display:flex;align-items:center;gap:10px;padding:12px 16px;font-size:14px;cursor:pointer;transition:background .12s}
+.ctx-item:active{background:var(--surface2)}
+.ctx-item.danger{color:var(--danger)}
+.ctx-backdrop{position:fixed;inset:0;z-index:399;display:none}
+.ctx-backdrop.open{display:block}
+.visit-menu-btn{width:32px;height:32px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-radius:var(--r);color:var(--text3);font-size:18px;cursor:pointer;transition:background .12s;letter-spacing:0;line-height:1}
+.visit-menu-btn:active{background:var(--surface2)}
 @keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
 .sk{border-radius:4px;background:linear-gradient(90deg,var(--surface2) 25%,var(--surface3) 50%,var(--surface2) 75%);background-size:800px 100%;animation:shimmer 1.4s infinite linear}
 .sk-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:13px 15px;display:flex;align-items:flex-start;gap:12px;margin-bottom:8px}
@@ -534,13 +543,20 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
   </div>
 </div>
 
+<div class="ctx-backdrop" id="ctx-backdrop" onclick="closeCtxMenu()"></div>
+<div class="ctx-menu" id="ctx-menu">
+  <div class="ctx-item danger" id="ctx-delete-btn" onclick="ctxDeleteConfirm()">
+    <span>🗑</span><span>Eliminar</span>
+  </div>
+</div>
+
 <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none" onchange="handlePhotoCapture(event)">
 <div class="toast" id="toast"></div>
 
 <script>
 /* ══ SUPABASE ══ */
 const SUPA_URL = 'https://jprezhsqtdnybmxpnaav.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpwcmV6aHNxdGRueWJteHBuYWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMzNTIsImV4cCI6MjA5MzU0OTM1Mn0.8hcirTUfQhVp1QE78K3Famw_TAreP3xqzMmoK3d-MM8'; // ← TUS CREDENCIALES
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpwcmV6aHNxdGRueWJteHBuYWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMzNTIsImV4cCI6MjA5MzU0OTM1Mn0.8hcirTUfQhVp1QE78K3Famw_TAreP3xqzMmoK3d-MM8';
 const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 /* ══ STATE ══ */
@@ -757,7 +773,10 @@ function renderHome(){
         <div class="visit-name">${v.siteName}</div>
         <div class="visit-meta">${v.client?v.client+' · ':''}${fmtDate(v.createdAt)}${nodes?' · '+nodes+' nodos':''}</div>
       </div>
-      <div class="visit-prog">${countAnswered(v)}/${countQ(v)}<br><span style="color:var(--text3)">${p}%</span></div>
+      <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
+        <div class="visit-prog" style="text-align:right">${countAnswered(v)}/${countQ(v)}<br><span style="color:var(--text3)">${p}%</span></div>
+        <div class="visit-menu-btn" onclick="event.stopPropagation();openCtxMenu(event,'visit','${v.id}','${v.siteName.replace(/'/g,"\\'")}')">⋯</div>
+      </div>
     </div>`;
   }).join('');
 }
@@ -1248,7 +1267,7 @@ function shareReport(){
 }
 
 /* ══ TEMPLATES ══ */
-function renderTemplates(){ document.getElementById('tmpl-list').innerHTML=S.templates.map(t=>{ const qc=t.sections.reduce((a,s)=>a+s.questions.length,0); return `<div class="tmpl-card" onclick="openTemplateEditor('${t.id}')"><div class="tmpl-icon">📋</div><div class="tmpl-info"><div class="tmpl-name">${t.name}</div><div class="tmpl-count">${t.sections.length} secciones · ${qc} preguntas</div></div><span style="color:var(--text3)">→</span></div>`; }).join(''); }
+function renderTemplates(){ document.getElementById('tmpl-list').innerHTML=S.templates.map(t=>{ const qc=t.sections.reduce((a,s)=>a+s.questions.length,0); return `<div class="tmpl-card" onclick="openTemplateEditor('${t.id}')"><div class="tmpl-icon">📋</div><div class="tmpl-info"><div class="tmpl-name">${t.name}</div><div class="tmpl-count">${t.sections.length} secciones · ${qc} preguntas</div></div><div class="visit-menu-btn" onclick="event.stopPropagation();openCtxMenu(event,'template','${t.id}','${t.name.replace(/'/g,"\\'")}')">⋯</div></div>`; }).join(''); }
 function openNewTemplateModal(){ document.getElementById('new-tmpl-name').value=''; document.getElementById('modal-new-template').classList.add('open'); }
 function createTemplate(){ const name=document.getElementById('new-tmpl-name').value.trim(); if(!name){ toast('Ingresa un nombre'); return; } const t={id:uid(),name,sections:[{name:'Sección 1',questions:['']}]}; S.templates.push(t); persist(); closeModal('modal-new-template'); openTemplateEditor(t.id); }
 function openTemplateEditor(id){ editingTemplateId=id; renderTemplateEditor(); showScreen('screen-tmpl-editor'); }
@@ -1262,6 +1281,59 @@ function delQ(si,qi){ const t=S.templates.find(x=>x.id===editingTemplateId); t.s
 function delSection(si){ const t=S.templates.find(x=>x.id===editingTemplateId); if(t.sections.length===1){ toast('Mínimo 1 sección'); return; } t.sections.splice(si,1); renderTemplateEditor(); }
 function addSectionToTemplate(){ const t=S.templates.find(x=>x.id===editingTemplateId); t.sections.push({name:'Sección '+(t.sections.length+1),questions:['']}); renderTemplateEditor(); }
 function saveTemplate(){ persist(); toast('Plantilla guardada'); showScreen('screen-settings'); renderTemplates(); }
+
+/* ══ CONTEXT MENU ══ */
+let ctxTarget={type:null,id:null,name:null};
+
+function openCtxMenu(e, type, id, name){
+  ctxTarget={type,id,name};
+  const menu=document.getElementById('ctx-menu');
+  const backdrop=document.getElementById('ctx-backdrop');
+  // Position near the tap
+  const x=Math.min(e.clientX, window.innerWidth-180);
+  const y=Math.min(e.clientY+4, window.innerHeight-80);
+  menu.style.left=x+'px';
+  menu.style.top=y+'px';
+  backdrop.classList.add('open');
+  // Trigger transition next frame
+  requestAnimationFrame(()=>menu.classList.add('open'));
+}
+
+function closeCtxMenu(){
+  document.getElementById('ctx-menu').classList.remove('open');
+  document.getElementById('ctx-backdrop').classList.remove('open');
+  ctxTarget={type:null,id:null,name:null};
+}
+
+function ctxDeleteConfirm(){
+  closeCtxMenu();
+  const {type,id,name}=ctxTarget;
+  if(!type||!id) return;
+  const label=type==='visit'?`la inspección "${name}"`:`la plantilla "${name}"`;
+  if(!confirm(`¿Eliminar ${label}?\n\nEsta acción no se puede deshacer.`)) return;
+  if(type==='visit') deleteVisit(id);
+  else deleteTemplate(id);
+}
+
+async function deleteVisit(id){
+  S.visits=S.visits.filter(v=>v.id!==id);
+  cacheLocal();
+  renderHome();
+  if(currentUser){
+    setSyncing();
+    try{ await sb.from('visits').delete().eq('id',id).eq('user_id',currentUser.id); setSynced(); }
+    catch(e){ console.warn('delete visit error',e); }
+  }
+  toast('Inspección eliminada');
+}
+
+async function deleteTemplate(id){
+  if(S.templates.length<=1){ toast('Debe quedar al menos una plantilla'); return; }
+  S.templates=S.templates.filter(t=>t.id!==id);
+  persist();
+  renderTemplates();
+  toast('Plantilla eliminada');
+}
 
 /* ══ INIT ══ */
 applyTheme();
