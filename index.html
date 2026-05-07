@@ -239,6 +239,29 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 .toast{position:fixed;bottom:88px;left:50%;transform:translateX(-50%);background:var(--surface3);border:1px solid var(--border2);border-radius:20px;padding:8px 18px;font-family:var(--mono);font-size:12px;color:var(--text);opacity:0;transition:opacity .25s;z-index:300;white-space:nowrap;pointer-events:none}
 .toast.show{opacity:1}
 
+/* TOP LOADING BAR */
+.top-bar{position:fixed;top:0;left:0;right:0;height:3px;z-index:999;pointer-events:none}
+.top-bar-fill{height:100%;width:0%;background:var(--accent);transition:width .3s ease;border-radius:0 2px 2px 0}
+.top-bar-fill.indeterminate{animation:indeterminate 1.4s infinite ease-in-out}
+@keyframes indeterminate{0%{left:0;width:0%}30%{left:0;width:60%}70%{left:40%;width:60%}100%{left:100%;width:0%}}
+.top-bar-fill.indeterminate{position:absolute}
+
+/* SPLASH SCREEN */
+.splash{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:500;transition:opacity .3s ease}
+.splash.hidden{opacity:0;pointer-events:none}
+.splash-logo{font-family:var(--mono);font-size:32px;font-weight:700;color:var(--accent);letter-spacing:.12em}
+.splash-sub{font-family:var(--mono);font-size:11px;color:var(--text3);letter-spacing:.1em}
+.splash-spinner{width:28px;height:28px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* SKELETON */
+@keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
+.sk{border-radius:4px;background:linear-gradient(90deg,var(--surface2) 25%,var(--surface3) 50%,var(--surface2) 75%);background-size:800px 100%;animation:shimmer 1.4s infinite linear}
+.sk-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:13px 15px;display:flex;align-items:flex-start;gap:12px;margin-bottom:8px}
+.sk-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.sk-line{height:12px;border-radius:3px}
+.sk-line-sm{height:10px;border-radius:3px}
+
 /* LOGIN */
 .login-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;gap:0}
 .login-logo{font-family:var(--mono);font-size:28px;font-weight:700;color:var(--accent);letter-spacing:.12em;margin-bottom:6px}
@@ -255,6 +278,16 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 </style>
 </head>
 <body>
+
+<!-- TOP LOADING BAR -->
+<div class="top-bar" id="top-bar"><div class="top-bar-fill" id="top-bar-fill"></div></div>
+
+<!-- SPLASH -->
+<div class="splash" id="splash">
+  <div class="splash-logo">SITECHECK</div>
+  <div class="splash-sub">// FIELD INSPECTION TOOL</div>
+  <div class="splash-spinner"></div>
+</div>
 
 <!-- LOGIN -->
 <div class="screen active" id="screen-login">
@@ -506,8 +539,8 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 
 <script>
 /* ══ SUPABASE ══ */
-const SUPA_URL = 'https://jprezhsqtdnybmxpnaav.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpwcmV6aHNxdGRueWJteHBuYWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMzNTIsImV4cCI6MjA5MzU0OTM1Mn0.8hcirTUfQhVp1QE78K3Famw_TAreP3xqzMmoK3d-MM8';
+const SUPA_URL = 'SUPABASE_URL_AQUI'; // ← TUS CREDENCIALES
+const SUPA_KEY = 'SUPABASE_ANON_KEY_AQUI'; // ← TUS CREDENCIALES
 const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 /* ══ STATE ══ */
@@ -537,8 +570,8 @@ function applyTheme(){
 /* ══ STORAGE ══ */
 function cacheLocal(){ localStorage.setItem(SK,JSON.stringify({visits:S.visits,templates:S.templates})); }
 function loadLocal(){ try{ const r=localStorage.getItem(SK); if(r){ const d=JSON.parse(r); S.visits=d.visits||[]; S.templates=d.templates||[]; } }catch(e){} }
-function setSyncing(){ const d=document.getElementById('sync-dot'); if(d) d.className='sync-dot syncing'; }
-function setSynced(){  const d=document.getElementById('sync-dot'); if(d){ d.className='sync-dot synced'; setTimeout(()=>d.className='sync-dot',3000); } }
+function setSyncing(){ const d=document.getElementById('sync-dot'); if(d) d.className='sync-dot syncing'; barStart(); }
+function setSynced(){  const d=document.getElementById('sync-dot'); if(d){ d.className='sync-dot synced'; setTimeout(()=>d.className='sync-dot',3000); } barDone(); }
 
 async function persistVisit(visit){
   if(!currentUser) return;
@@ -600,12 +633,58 @@ async function doLogin(){
   await onLogin(data.user);
 }
 function showLoginError(msg){ const el=document.getElementById('login-error'); el.textContent=msg; el.classList.add('show'); }
+/* ══ LOADING UI ══ */
+function splashHide(){ const s=document.getElementById('splash'); if(s){ s.classList.add('hidden'); setTimeout(()=>s.remove(),350); } }
+function barStart(){ const f=document.getElementById('top-bar-fill'); if(f){ f.style.width='0%'; f.classList.add('indeterminate'); } }
+function barDone(){ const f=document.getElementById('top-bar-fill'); if(!f) return; f.classList.remove('indeterminate'); f.style.width='100%'; setTimeout(()=>{ f.style.transition='opacity .3s'; f.style.opacity='0'; setTimeout(()=>{ f.style.width='0%'; f.style.opacity='1'; f.style.transition='width .3s ease'; },300); },400); }
+
+function renderVisitsSkeleton(){
+  const list=document.getElementById('visits-list'); if(!list) return;
+  list.innerHTML=[1,2,3].map(()=>`
+    <div class="sk-card">
+      <div class="sk sk-dot" style="width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:5px"></div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:7px">
+        <div class="sk sk-line" style="width:55%"></div>
+        <div class="sk sk-line-sm" style="width:75%"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+        <div class="sk sk-line" style="width:32px"></div>
+        <div class="sk sk-line-sm" style="width:24px"></div>
+      </div>
+    </div>`).join('');
+}
+
 async function onLogin(user){
   currentUser=user;
   const chip=document.getElementById('user-chip');
   if(chip) chip.textContent=user.email.split('@')[0];
-  loadLocal(); initDefaults(); renderHome(); renderTemplates(); showScreen('screen-home');
-  await hydrateFromRemote(); initDefaults(); renderHome(); renderTemplates();
+
+  // 1. Load cache and show home immediately (no flash)
+  loadLocal(); initDefaults();
+  showScreen('screen-home');
+  splashHide();
+
+  // 2. If cache had data render it, else show skeleton
+  if(S.visits.length){ renderHome(); renderTemplates(); }
+  else { renderHomeSkeleton(); renderTemplates(); }
+
+  // 3. Fetch remote in background with top bar
+  barStart();
+  await hydrateFromRemote();
+  barDone();
+  initDefaults(); renderHome(); renderTemplates();
+}
+
+function renderHomeSkeleton(){
+  // Fill stat cards with pulse
+  ['stat-today','stat-total','stat-done','stat-prog'].forEach(id=>{
+    const el=document.getElementById(id); if(el){ el.innerHTML=`<div class="sk" style="width:28px;height:24px;border-radius:4px;display:inline-block"></div>`; }
+  });
+  const list=document.getElementById('visits-list'); if(!list) return;
+  // Date line
+  const dateEl=document.getElementById('home-date');
+  if(dateEl) dateEl.innerHTML=`<div class="sk" style="width:140px;height:10px;border-radius:3px;display:inline-block"></div>`;
+  renderVisitsSkeleton();
 }
 function confirmLogout(){ if(confirm('¿Cerrar sesión?')) doLogout(); }
 async function doLogout(){
@@ -1194,18 +1273,18 @@ applyTheme();
   if(accessToken) history.replaceState(null,'',window.location.pathname);
   if(tokenType==='recovery'){
     if(accessToken&&refreshToken) await sb.auth.setSession({access_token:accessToken,refresh_token:refreshToken});
-    showScreen('screen-set-password'); return;
+    showScreen('screen-set-password'); splashHide(); return;
   }
   if(accessToken&&refreshToken){
     const {data,error}=await sb.auth.setSession({access_token:accessToken,refresh_token:refreshToken});
     if(!error&&data.session){
       const meta=data.session.user.user_metadata||{};
-      if(!meta.password_set){ showScreen('screen-set-password'); return; }
+      if(!meta.password_set){ showScreen('screen-set-password'); splashHide(); return; }
       await onLogin(data.session.user); return;
     }
   }
   const {data:{session}}=await sb.auth.getSession();
-  if(session) await onLogin(session.user); else showScreen('screen-login');
+  if(session) await onLogin(session.user); else { showScreen('screen-login'); splashHide(); }
   sb.auth.onAuthStateChange(async(event,session)=>{
     if(event==='PASSWORD_RECOVERY'){ showScreen('screen-set-password'); return; }
     if(event==='SIGNED_OUT'){ currentUser=null; S={visits:[],templates:[]}; showScreen('screen-login'); }
