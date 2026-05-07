@@ -355,7 +355,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
     <div class="btn-icon" onclick="showScreen('screen-settings');renderTemplates()">⚙</div>
   </div>
   <div class="home-hero">
-    <div class="home-badge">// FIELD INSPECTION v4.6.2</div>
+    <div class="home-badge">// FIELD INSPECTION v4.6.3</div>
     <div class="home-title">Panel de<br>Inspecciones</div>
     <div class="home-sub" id="home-date"></div>
   </div>
@@ -584,7 +584,28 @@ function applyTheme(){
 }
 
 /* ══ STORAGE ══ */
-function cacheLocal(){ localStorage.setItem(SK,JSON.stringify({visits:S.visits,templates:S.templates})); }
+function cacheLocal(){
+  try{
+    localStorage.setItem(SK, JSON.stringify({visits:S.visits, templates:S.templates}));
+  } catch(e){
+    if(e.name==='QuotaExceededError'){
+      // Strip base64 photos from visits before caching — they live in Supabase
+      const stripped={
+        templates: S.templates,
+        visits: S.visits.map(v=>({
+          ...v,
+          nodes:(v.nodes||[]).map(n=>({...n, photo:null})),
+          sections: v.sections.map(s=>({
+            ...s,
+            questions: s.questions.map(q=>({...q, photos:[]}))
+          }))
+        }))
+      };
+      try{ localStorage.setItem(SK, JSON.stringify(stripped)); }
+      catch(e2){ localStorage.removeItem(SK); } // if still full, clear entirely
+    }
+  }
+}
 function loadLocal(){ try{ const r=localStorage.getItem(SK); if(r){ const d=JSON.parse(r); S.visits=d.visits||[]; S.templates=d.templates||[]; } }catch(e){} }
 function setSyncing(){ const d=document.getElementById('sync-dot'); if(d) d.className='sync-dot syncing'; barStart(); }
 function setSynced(){  const d=document.getElementById('sync-dot'); if(d){ d.className='sync-dot synced'; setTimeout(()=>d.className='sync-dot',3000); } barDone(); }
