@@ -355,7 +355,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
     <div class="btn-icon" onclick="showScreen('screen-settings');renderTemplates()">⚙</div>
   </div>
   <div class="home-hero">
-    <div class="home-badge">// FIELD INSPECTION v4.6.3</div>
+    <div class="home-badge">// FIELD INSPECTION v4.6.4</div>
     <div class="home-title">Panel de<br>Inspecciones</div>
     <div class="home-sub" id="home-date"></div>
   </div>
@@ -555,8 +555,9 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 
 <script>
 /* ══ SUPABASE ══ */
-const SUPA_URL = 'https://jprezhsqtdnybmxpnaav.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpwcmV6aHNxdGRueWJteHBuYWF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NzMzNTIsImV4cCI6MjA5MzU0OTM1Mn0.8hcirTUfQhVp1QE78K3Famw_TAreP3xqzMmoK3d-MM8'; // ← TUS CREDENCIALES
+import {SUPA_KEY} from "./keys";
+import {SUPA_URL} from "./keys";
+
 const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 /* ══ STATE ══ */
